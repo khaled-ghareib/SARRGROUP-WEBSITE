@@ -1,0 +1,317 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { ShoppingBag, MapPin, Menu, X, ChevronRight, Trash2, CreditCard, CheckCircle2, ExternalLink } from 'lucide-react';
+
+// --- FIREBASE CONFIGURATION ---
+// Paste your keys from the Firebase Console here to enable the database
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_ID",
+  appId: "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [activeTheme, setActiveTheme] = useState('sarreguemines');
+  const [cart, setCart] = useState([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState('cart'); 
+  const [scrolled, setScrolled] = useState(false);
+
+  // Theme Definitions
+  const themes = {
+    sarreguemines: {
+      name: 'Sarreguemines',
+      logo: 'LOGOS/SG_Colored.png',
+      primary: 'bg-[#002395]', // Royal Blue
+      secondary: 'bg-[#ED2939]', // Red
+      text: 'text-[#002395]',
+      heroGradient: 'from-[#002395] via-[#002395]/80 to-transparent',
+      font: 'font-serif'
+    },
+    sarrdesign: {
+      name: 'Sarrdesign',
+      logo: 'LOGOS/SD_COLORED.png',
+      primary: 'bg-[#121212]', // Matte Black
+      secondary: 'bg-[#D4AF37]', // Gold
+      text: 'text-[#D4AF37]',
+      heroGradient: 'from-[#121212] via-[#121212]/95 to-transparent',
+      font: 'font-sans'
+    }
+  };
+
+  const current = themes[activeTheme];
+
+  useEffect(() => {
+    signInAnonymously(auth);
+    onAuthStateChanged(auth, (u) => setUser(u));
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Sync Cart with Database
+  useEffect(() => {
+    if (!user) return;
+    const cartRef = collection(db, 'carts', user.uid, 'items');
+    const unsub = onSnapshot(cartRef, (snapshot) => {
+      setCart(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, [user]);
+
+  const addToCart = async (product) => {
+    if (!user) return;
+    const itemRef = doc(db, 'carts', user.uid, 'items', String(product.id));
+    await setDoc(itemRef, { ...product, quantity: 1 });
+    setIsCartOpen(true);
+  };
+
+  const handleCheckout = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    await addDoc(collection(db, 'orders'), {
+      userId: user.uid,
+      customerName: e.target.name.value,
+      customerPhone: e.target.phone.value,
+      items: cart,
+      total: cart.reduce((a, b) => a + b.price, 0),
+      timestamp: serverTimestamp()
+    });
+    setCheckoutStep('success');
+  };
+
+  const products = [
+    { id: 1, name: 'Vendôme Basin', brand: 'sarreguemines', price: 12500, img: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=800' },
+    { id: 2, name: 'Elysée Toilet', brand: 'sarreguemines', price: 18700, img: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?q=80&w=800' },
+    { id: 3, name: 'Aero Shower', brand: 'sarrdesign', price: 8400, img: 'https://images.unsplash.com/photo-1620626011761-9963d7521476?q=80&w=800' },
+    { id: 4, name: 'Zenith Waterfall', brand: 'sarrdesign', price: 5200, img: 'https://images.unsplash.com/photo-1595180630730-80491836691c?q=80&w=800' }
+  ];
+
+  return (
+    <div className={`min-h-screen transition-all duration-700 ${current.font} ${activeTheme === 'sarreguemines' ? 'bg-white' : 'bg-[#0a0a0a] text-white'}`}>
+      
+      {/* Dynamic Navigation */}
+      <nav className={`fixed w-full z-50 p-4 md:p-6 transition-all duration-500 ${scrolled ? 'bg-white/95 backdrop-blur-md shadow-lg' : 'bg-transparent'}`}>
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <img 
+            src={current.logo} 
+            className={`h-10 md:h-16 transition-all duration-500 ${scrolled && activeTheme === 'sarreguemines' ? 'brightness-100' : ''}`} 
+            alt="Brand Logo" 
+          />
+          <div className="flex items-center gap-4">
+             {activeTheme === 'sarreguemines' && (
+               <div className="hidden md:flex h-4 w-8 shadow-sm">
+                 <div className="flex-1 bg-[#002395]"></div>
+                 <div className="flex-1 bg-white"></div>
+                 <div className="flex-1 bg-[#ED2939]"></div>
+               </div>
+             )}
+             <button onClick={() => setIsCartOpen(true)} className="relative p-2 bg-black/5 rounded-full">
+                <ShoppingBag size={24} color={scrolled && activeTheme === 'sarreguemines' ? '#000' : '#fff'} />
+                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{cart.length}</span>}
+             </button>
+             <button 
+                onClick={() => setActiveTheme(activeTheme === 'sarreguemines' ? 'sarrdesign' : 'sarreguemines')}
+                className={`px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest border transition-all ${scrolled && activeTheme === 'sarreguemines' ? 'border-black text-black' : 'border-white/30 text-white'}`}
+             >
+               Explore {activeTheme === 'sarreguemines' ? 'Sarrdesign' : 'Sarreguemines'}
+             </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <section className="relative h-screen flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0">
+          <img 
+            src={activeTheme === 'sarreguemines' 
+              ? "https://images.unsplash.com/photo-1600566752355-35792bedcfea?q=80&w=2000"
+              : "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?q=80&w=2000"
+            } 
+            className="w-full h-full object-cover opacity-60"
+            alt="Hero Background"
+          />
+          <div className={`absolute inset-0 bg-gradient-to-b ${current.heroGradient} opacity-90`}></div>
+        </div>
+
+        <div className="relative z-10 w-full px-6 text-center md:text-left md:ml-20">
+          <div className="max-w-3xl">
+            <h1 className="text-5xl md:text-9xl text-white font-light leading-tight mb-8">
+              {activeTheme === 'sarreguemines' ? "L'Art de Vivre." : "Precision Tech."}
+            </h1>
+            <p className="text-gray-200 text-sm md:text-xl max-w-lg mb-10 font-light leading-relaxed">
+              Established in 1778, Sarreguemines defines the intersection of French heritage and modern luxury.
+            </p>
+            <div className="flex gap-4">
+               <button onClick={() => document.getElementById('shop').scrollIntoView({behavior:'smooth'})} className={`${activeTheme === 'sarreguemines' ? 'bg-white text-blue-900' : 'bg-[#D4AF37] text-black'} px-10 py-5 text-[10px] font-bold uppercase tracking-widest rounded-sm shadow-2xl transition-transform active:scale-95`}>
+                 View Collections
+               </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Heritage Section */}
+      <section className="py-24 px-6 max-w-7xl mx-auto grid md:grid-cols-2 gap-16 items-center">
+        <div className="relative group">
+          <div className="absolute -inset-4 border-2 border-stone-800 opacity-10 group-hover:opacity-30 transition-all"></div>
+          <div className="relative z-10 p-2 bg-white shadow-2xl border-[15px] border-stone-900">
+            <img src="image.png" className="w-full h-auto" alt="1778 Factory Etching" />
+            <div className="p-4 text-center border-t border-stone-100">
+              <p className="text-[10px] font-serif italic text-stone-400 uppercase tracking-widest">Atelier de Sarreguemines — France, 1778</p>
+            </div>
+          </div>
+        </div>
+        <div className="max-w-xl">
+          <span className={`${activeTheme === 'sarreguemines' ? 'text-red-600' : 'text-[#D4AF37]'} font-bold uppercase tracking-widest text-[10px]`}>History Since 1778</span>
+          <h2 className="text-4xl md:text-7xl font-serif mt-4 mb-8 leading-tight">Artisan <br/><span className="italic">Excellence.</span></h2>
+          <p className="opacity-70 leading-relaxed mb-10 text-lg">
+            Our original factory etching from 1778 captures the soul of our brand. From the clay pits of Lorraine to the luxury residences of modern Egypt, we maintain a standard of porcelain perfection that spans centuries.
+          </p>
+          <div className="grid grid-cols-2 gap-8 pt-8 border-t border-stone-100">
+             <div><h4 className="text-3xl font-light">248</h4><p className="text-[10px] uppercase tracking-widest opacity-40">Years Active</p></div>
+             <div><h4 className="text-3xl font-light">France</h4><p className="text-[10px] uppercase tracking-widest opacity-40">Origin</p></div>
+          </div>
+        </div>
+      </section>
+
+      {/* Shop Section */}
+      <section id="shop" className={`py-24 px-6 ${activeTheme === 'sarreguemines' ? 'bg-slate-50' : 'bg-[#111]'}`}>
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-16 text-center md:text-left">
+            <h2 className="text-4xl md:text-5xl font-light mb-4 capitalize">{activeTheme} Collections</h2>
+            <div className={`h-1 w-20 ${current.secondary} mx-auto md:mx-0`}></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+            {products.filter(p => p.brand === activeTheme).map(p => (
+              <div key={p.id} className="group cursor-pointer">
+                <div className="relative aspect-[4/5] mb-6 overflow-hidden bg-white shadow-xl rounded-sm">
+                  <img src={p.img} alt={p.name} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-8">
+                    <button 
+                      onClick={() => addToCart(p)}
+                      className="w-full bg-white text-black py-4 text-[10px] font-bold uppercase tracking-widest shadow-2xl active:scale-95 transition-transform"
+                    >
+                      Add to Selection
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-xl font-light mb-1">{p.name}</h3>
+                    <p className="text-[10px] opacity-40 uppercase tracking-widest">{p.category}</p>
+                  </div>
+                  <p className="font-bold">EGP {p.price.toLocaleString()}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Cart Sidebar */}
+      {isCartOpen && (
+        <div className="fixed inset-0 z-[100] flex justify-end">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsCartOpen(false)}></div>
+          <div className={`relative w-full max-w-md h-full shadow-2xl p-8 flex flex-col transform animate-slide-left ${activeTheme === 'sarreguemines' ? 'bg-white text-slate-900' : 'bg-[#121212] text-white'}`}>
+            <div className="flex justify-between items-center mb-12 border-b border-white/10 pb-6">
+              <h3 className="text-2xl font-light italic">Your Selection</h3>
+              <button onClick={() => setIsCartOpen(false)}><X size={32} /></button>
+            </div>
+
+            {checkoutStep === 'cart' && (
+              <div className="flex-1 overflow-y-auto space-y-6">
+                {cart.length === 0 ? (
+                  <div className="text-center py-20 opacity-40 font-serif italic text-xl">Selection is empty</div>
+                ) : (
+                  cart.map(item => (
+                    <div key={item.id} className="flex gap-4 items-center">
+                      <img src={item.img} className="w-20 h-20 object-cover rounded-sm" alt={item.name} />
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold uppercase tracking-tighter">{item.name}</h4>
+                        <p className="text-xs opacity-50 font-bold">EGP {item.price.toLocaleString()}</p>
+                      </div>
+                      <button className="p-2 opacity-30 hover:opacity-100"><Trash2 size={18} /></button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {checkoutStep === 'cart' && cart.length > 0 && (
+              <div className="mt-auto pt-8 border-t border-white/10">
+                <div className="flex justify-between items-center mb-6">
+                  <span className="text-xs uppercase tracking-widest font-bold opacity-40">Total</span>
+                  <span className="text-2xl font-bold tracking-tighter">EGP {cart.reduce((a, b) => a + b.price, 0).toLocaleString()}</span>
+                </div>
+                <button 
+                  onClick={() => setCheckoutStep('shipping')}
+                  className="w-full bg-red-600 text-white py-6 text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-transform"
+                >
+                  Confirm Selection
+                </button>
+              </div>
+            )}
+
+            {checkoutStep === 'shipping' && (
+              <form onSubmit={handleCheckout} className="flex-1 space-y-8 pt-10">
+                <h4 className="text-xs font-bold uppercase tracking-widest mb-10 opacity-50">Concierge Details</h4>
+                <input required name="name" type="text" placeholder="Full Name" className="w-full bg-transparent border-b border-white/20 py-4 outline-none focus:border-white transition-colors text-sm" />
+                <input required name="phone" type="tel" placeholder="Phone Number (Egypt)" className="w-full bg-transparent border-b border-white/20 py-4 outline-none focus:border-white transition-colors text-sm" />
+                <div className="pt-20">
+                   <button type="submit" className="w-full bg-white text-black py-6 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-3">
+                     <CreditCard size={18} /> Place Order
+                   </button>
+                   <button type="button" onClick={() => setCheckoutStep('cart')} className="w-full py-4 text-[9px] opacity-40 uppercase tracking-widest mt-4">Return to Selection</button>
+                </div>
+              </form>
+            )}
+
+            {checkoutStep === 'success' && (
+              <div className="flex-1 flex flex-col items-center justify-center text-center">
+                <CheckCircle2 size={80} className="text-green-500 mb-8" />
+                <h3 className="text-3xl font-light mb-4 italic">Selection Confirmed</h3>
+                <p className="opacity-50 text-sm mb-12">Merci. A Sarreguemines concierge will contact you shortly to finalize your delivery.</p>
+                <button onClick={() => { setIsCartOpen(false); setCheckoutStep('cart'); }} className="border border-white/20 px-12 py-5 text-[10px] font-bold uppercase tracking-widest">Continue Exploring</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="py-24 px-6 border-t border-white/5 text-center">
+        <div className="max-w-7xl mx-auto flex flex-col items-center">
+           <img src={current.logo} alt="Footer Brand Logo" className="h-16 md:h-24 mb-10" />
+           <p className="max-w-md opacity-40 text-sm mb-12 italic font-serif">"Crafting history into porcelain since 1778. From Lorraine to Egypt, excellence is our only heritage."</p>
+           <div className="flex gap-12 text-[10px] font-bold tracking-[0.4em] uppercase opacity-30">
+              <span className="hover:opacity-100 cursor-pointer">Privacy</span>
+              <span className="hover:opacity-100 cursor-pointer">Terms</span>
+              <span className="hover:opacity-100 cursor-pointer" onClick={() => window.scrollTo({top:0, behavior:'smooth'})}>Top</span>
+           </div>
+        </div>
+      </footer>
+
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Plus+Jakarta+Sans:wght@200;300;400;700&display=swap');
+        .font-serif { font-family: 'Playfair Display', serif; }
+        .font-sans { font-family: 'Plus Jakarta Sans', sans-serif; }
+        @keyframes slide-left { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .animate-slide-left { animation: slide-left 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+      `}</style>
+    </div>
+  );
+};
+
+export default App;
+
